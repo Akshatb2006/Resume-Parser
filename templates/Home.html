@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YourERPCoach - AI Resume Parser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 50px;
+            max-width: 900px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 64px;
+            margin-bottom: 20px;
+            animation: bounce 2s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        h1 {
+            color: #667eea;
+            font-size: 42px;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 18px;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 25px;
+            margin: 40px 0;
+            text-align: left;
+        }
+        
+        .feature {
+            padding: 25px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            transition: all 0.3s;
+        }
+        
+        .feature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.2);
+        }
+        
+        .feature-icon {
+            font-size: 42px;
+            margin-bottom: 12px;
+        }
+        
+        .feature h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
+        
+        .feature p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 40px;
+        }
+        
+        .btn {
+            padding: 16px 40px;
+            border: none;
+            border-radius: 12px;
+            font-size: 17px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        
+        .btn-tertiary {
+            background: #f8f9ff;
+            color: #667eea;
+            border: 2px solid #e0e7ff;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 50px;
+            padding-top: 40px;
+            border-top: 2px solid #f0f0f0;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 38px;
+            font-weight: bold;
+            color: #667eea;
+            display: block;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 32px;
+            }
+            
+            .cta-buttons {
+                flex-direction: column;
+            }
+            
+            .stats {
+                flex-direction: column;
+                gap: 25px;
+            }
+            
+            .container {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🎯</div>
+        <h1>YourERPCoach</h1>
+        <p class="subtitle">
+            AI-Powered ERP Consultant Resume Parser & Search Platform<br>
+            Powered by Google Gemini AI for Intelligent Resume Analysis
+        </p>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">📄</div>
+                <h3>Smart Upload</h3>
+                <p>Upload PDF or Word resumes with drag-and-drop support</p>
+            </div>
+            
+            <div class="feature">
+                <div class="feature-icon">🤖</div>
+                <h3>AI Parsing</h3>
+                <p>Gemini AI extracts ERP systems, modules, skills & experience</p>
+            </div>
+            
+            <div class="feature">
+                <div class="feature-icon">🔍</div>
+                <h3>Smart Search</h3>
+                <p>Natural language search to find perfect candidates</p>
+            </div>
+            
+            <div class="feature">
+                <div class="feature-icon">📊</div>
+                <h3>Excel Export</h3>
+                <p>Download structured data in Excel format anytime</p>
+            </div>
+        </div>
+        
+        <div class="cta-buttons">
+            <a href="/resume" class="btn btn-primary">
+                <span>📤</span> Upload Resume
+            </a>
+            <a href="/search" class="btn btn-secondary">
+                <span>🔍</span> Search Candidates
+            </a>
+            <a href="/download-database" class="btn btn-tertiary">
+                <span>📥</span> Download Database
+            </a>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-number" id="resumeCount">0</span>
+                <div class="stat-label">Resumes Parsed</div>
+            </div>
+            <div class="stat">
+                <span class="stat-number">AI</span>
+                <div class="stat-label">Powered by Gemini</div>
+            </div>
+            <div class="stat">
+                <span class="stat-number">&lt;30s</span>
+                <div class="stat-label">Avg. Parse Time</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Fetch resume count
+        async function getResumeCount() {
+            try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('resumeCount').textContent = data.count || 0;
+                }
+            } catch (error) {
+                console.log('Stats not available yet');
+            }
+        }
+        
+        getResumeCount();
+    </script>
+</body>
+</html>

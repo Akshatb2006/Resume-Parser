@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YourERPCoach - Search Candidates</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            color: #666;
+        }
+        
+        .search-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .search-title {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn-search {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .btn-search:hover {
+            transform: translateY(-2px);
+        }
+        
+        .search-examples {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        .search-examples strong {
+            color: #667eea;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .results-section {
+            display: none;
+        }
+        
+        .results-header {
+            background: white;
+            border-radius: 15px;
+            padding: 20px 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .results-count {
+            font-size: 18px;
+            color: #333;
+        }
+        
+        .results-count strong {
+            color: #667eea;
+        }
+        
+        .resume-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+        }
+        
+        .resume-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+        
+        .candidate-name {
+            font-size: 22px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .candidate-role {
+            color: #667eea;
+            font-size: 16px;
+        }
+        
+        .relevance-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .card-section {
+            margin-bottom: 15px;
+        }
+        
+        .section-label {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .section-value {
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+        
+        .tag {
+            background: #f8f9ff;
+            color: #667eea;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 14px;
+        }
+        
+        .match-reason {
+            background: #f8f9ff;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            margin-top: 15px;
+        }
+        
+        .no-results {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .no-results-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .nav-links {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .nav-links a {
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            padding: 12px 25px;
+            border-radius: 10px;
+            font-weight: 600;
+            margin: 0 10px;
+            display: inline-block;
+        }
+        
+        .nav-links a:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🔍 YourERPCoach</div>
+            <div class="subtitle">Search ERP Consultant Candidates</div>
+        </div>
+        
+        <div class="search-section">
+            <h2 class="search-title">Find the Perfect Candidate</h2>
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    class="search-input" 
+                    id="searchInput" 
+                    placeholder="e.g., SAP FI consultant with 5 years experience"
+                >
+                <button class="btn-search" id="searchBtn">🔍 Search</button>
+            </div>
+            <div class="search-examples">
+                <strong>Examples:</strong> "SAP MM module expert" | "Oracle ERP with SQL skills" | "Microsoft Dynamics consultant in New York"
+            </div>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="color: #667eea; font-weight: 600;">Searching with AI...</p>
+        </div>
+        
+        <div class="results-section" id="resultsSection">
+            <div class="results-header">
+                <div class="results-count" id="resultsCount"></div>
+            </div>
+            <div id="resultsContainer"></div>
+        </div>
+        
+        <div class="nav-links">
+            <a href="/">🏠 Home</a>
+            <a href="/resume">📤 Upload Resume</a>
+            <a href="/download-database">📥 Download Database</a>
+        </div>
+    </div>
+    
+    <script>
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const loading = document.getElementById('loading');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsCount = document.getElementById('resultsCount');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        searchBtn.addEventListener('click', performSearch);
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+        
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            
+            if (!query) {
+                alert('Please enter a search query');
+                return;
+            }
+            
+            loading.style.display = 'block';
+            resultsSection.style.display = 'none';
+            
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data.results, query);
+                } else {
+                    showError(data.error);
+                }
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+        
+        function displayResults(results, query) {
+            resultsSection.style.display = 'block';
+            
+            if (results.length === 0) {
+                resultsContainer.innerHTML = `
+                    <div class="no-results">
+                        <div class="no-results-icon">😔</div>
+                        <h3>No candidates found</h3>
+                        <p>Try a different search query</p>
+                    </div>
+                `;
+                resultsCount.innerHTML = `Found <strong>0</strong> candidates for "${query}"`;
+                return;
+            }
+            
+            resultsCount.innerHTML = `Found <strong>${results.length}</strong> candidate${results.length > 1 ? 's' : ''} for "${query}"`;
+            
+            resultsContainer.innerHTML = results.map(candidate => `
+                <div class="resume-card">
+                    <div class="card-header">
+                        <div>
+                            <div class="candidate-name">${candidate.Name || 'N/A'}</div>
+                            <div class="candidate-role">${candidate.Current_Role || 'N/A'}</div>
+                        </div>
+                        <div class="relevance-badge">${candidate.relevance_score}% Match</div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <div class="section-label">📧 Contact</div>
+                        <div class="section-value">
+                            ${candidate.Email || 'N/A'} | ${candidate.Phone || 'N/A'}
+                        </div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <div class="section-label">🏢 Current Company</div>
+                        <div class="section-value">${candidate.Current_Company || 'N/A'}</div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <div class="section-label">⏱️ Experience</div>
+                        <div class="section-value">${candidate.Total_Years_Experience || 'N/A'} years</div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <div class="section-label">💼 ERP Systems</div>
+                        <div class="tags">
+                            ${(candidate.ERP_Systems || '').split(',').filter(s => s.trim()).map(system => 
+                                `<span class="tag">${system.trim()}</span>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <div class="section-label">📦 ERP Modules</div>
+                        <div class="tags">
+                            ${(candidate.ERP_Modules || '').split(',').filter(m => m.trim()).map(module => 
+                                `<span class="tag">${module.trim()}</span>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="card-section">
+                        <div class="section-label">🛠️ Technical Skills</div>
+                        <div class="tags">
+                            ${(candidate.Technical_Skills || '').split(',').filter(s => s.trim()).slice(0, 10).map(skill => 
+                                `<span class="tag">${skill.trim()}</span>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    
+                    <div class="match-reason">
+                        <strong>Why this match:</strong> ${candidate.match_reason || 'Relevant experience and skills'}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function showError(message) {
+            resultsSection.style.display = 'block';
+            resultsContainer.innerHTML = `
+                <div class="no-results">
+                    <div class="no-results-icon">❌</div>
+                    <h3>Search Error</h3>
+                    <p>${message}</p>
+                </div>
+            `;
+            resultsCount.innerHTML = '<strong>Error</strong> occurred during search';
+        }
+    </script>
+</body>
+</html>
