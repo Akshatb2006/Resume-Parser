@@ -15,7 +15,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'pdf', 'docx', 'doc'}
 
 SKYQ_BASE_URL = "https://ai.skyq.tech"
-SKYQ_JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImQ5NTIzM2VhLTYxY2ItNDY1NC05MGI4LTFkNjRhZGI0ZjE0YiJ9.bBlFzDMgLkNNim-8jGBXBeIkBNYC9HBqEvPPkgjRv3Q"
+SKYQ_JWT_TOKEN = "Your_SkyQ_JWT_Token_Here"
 SKYQ_HEADERS = {
     "Authorization": f"Bearer {SKYQ_JWT_TOKEN}",
     "Content-Type": "application/json"
