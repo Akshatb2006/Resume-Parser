@@ -26,7 +26,7 @@ def sync_to_yecc_api(parsed_data):
         last_name = " ".join(parsed_data.get("name", "").split()[1:]) if len(parsed_data.get("name", "").split()) > 1 else ""
 
         user_payload = {
-            "RoleID": "Candidate",
+            "RoleID": "Trainee",
             "FirstName": first_name,
             "LastName": last_name,
             "Phone": parsed_data.get("phone", "").replace("+", "").replace("-", "").replace(" ", "")[-10:],
