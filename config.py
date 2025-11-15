@@ -1,5 +1,6 @@
 import os
 
+
 UPLOAD_FOLDER = 'uploads'
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024  
 ALLOWED_EXTENSIONS = {'pdf', 'docx', 'doc'}
@@ -9,19 +10,19 @@ LOCAL_DOCS_DIR = 'docs_for_rag'
 
 SKYQ_BASE_URL = "https://ai.skyq.tech"
 
-SKYQ_JWT_TOKEN = "Your_SkyQ_JWT_Token_Here"  
+SKYQ_JWT_TOKEN = os.getenv("SKYQ_JWT_TOKEN") 
 
 SKYQ_HEADERS = {
     "Authorization": f"Bearer {SKYQ_JWT_TOKEN}",
     "Content-Type": "application/json"
 }
 
-USE_BETA_ENVIRONMENT = False
+USE_BETA_ENVIRONMENT = True
 
-YECC_API_TOKEN = "Your_YECC_API_Token_Here"  
+YECC_API_TOKEN = os.getenv("YECC_API_TOKEN") 
 
 if USE_BETA_ENVIRONMENT:
-    YECC_BASE_URL = "https://betaapi.yecc.tech"
+    YECC_BASE_URL = "https://api.yecc.tech"
     FRONTEND_ORIGIN = "https://beta.yecc.tech"
 else:
     YECC_BASE_URL = "https://api.yecc.tech"

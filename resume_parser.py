@@ -1,14 +1,101 @@
 import json
 import time
 import requests
+import re
 from config import SKYQ_BASE_URL, SKYQ_HEADERS, MODEL_CONFIGS, MAX_TEXT_LENGTHS
 from utils import clean_array, extract_email, extract_phone, extract_linkedin, extract_years_experience
 
+def fix_json_string(json_str):
+    """Fix common JSON formatting issues"""
+    if not json_str or not json_str.strip():
+        return "{}"
+    
+    json_str = re.sub(r'```json\s*', '', json_str)
+    json_str = re.sub(r'```\s*', '', json_str)
+    
+    json_str = re.sub(r'<think>.*?</think>', '', json_str, flags=re.DOTALL)
+    json_str = re.sub(r'<thinking>.*?</thinking>', '', json_str, flags=re.DOTALL)
+    
+    json_str = json_str.strip()
+    
+    if not json_str:
+        return "{}"
+    
+    start = json_str.find('{')
+    end = json_str.rfind('}')
+    
+    if start == -1 or end == -1 or end <= start:
+        return "{}"
+    
+    json_str = json_str[start:end+1]
+    
+    return json_str
+
+def safe_json_parse(content, max_attempts=4):
+    
+    if not content or not content.strip():
+        raise json.JSONDecodeError("Empty content", "", 0)
+    
+    for attempt in range(max_attempts):
+        try:
+            if attempt == 0:
+                return json.loads(content)
+            
+            elif attempt == 1:
+                fixed = fix_json_string(content)
+                if fixed == "{}":
+                    raise json.JSONDecodeError("No JSON found", content, 0)
+                return json.loads(fixed)
+            
+            elif attempt == 2:
+                fixed = fix_json_string(content)
+                if fixed == "{}":
+                    raise json.JSONDecodeError("No JSON found", content, 0)
+                    
+                open_braces = fixed.count('{')
+                close_braces = fixed.count('}')
+                open_brackets = fixed.count('[')
+                close_brackets = fixed.count(']')
+                
+                if open_braces > close_braces:
+                    fixed += '}' * (open_braces - close_braces)
+                if open_brackets > close_brackets:
+                    fixed += ']' * (open_brackets - close_brackets)
+                
+                return json.loads(fixed)
+            
+            else:
+                fixed = fix_json_string(content)
+                for i in range(len(fixed), 100, -100):
+                    try:
+                        test = fixed[:i].rstrip()
+                        if test.endswith('}'):
+                            result = json.loads(test)
+                            print(f"      ⚠️  Recovered partial JSON ({i}/{len(fixed)} chars)")
+                            return result
+                    except:
+                        continue
+                        
+        except json.JSONDecodeError as e:
+            if attempt == max_attempts - 1:
+                print(f"      JSON Error: {str(e)[:100]}")
+                if hasattr(e, 'pos') and e.pos:
+                    snippet_start = max(0, e.pos - 50)
+                    snippet_end = min(len(content), e.pos + 50)
+                    print(f"      Context: ...{content[snippet_start:snippet_end]}...")
+                else:
+                    print(f"      Content preview: {content[:200]}...")
+                raise
+            continue
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                raise
+            continue
+    
+    raise json.JSONDecodeError("Could not parse JSON after all attempts", content, 0)
+
 def smart_truncate_resume(resume_text, max_length=8000):
-    """
-    Smart truncation: keeps beginning (contact info) and end (recent experience)
-    Returns the most relevant parts of the resume
-    """
+    """Smart truncation keeping important sections"""
     if len(resume_text) <= max_length:
         return resume_text, False
     
@@ -21,203 +108,15 @@ def smart_truncate_resume(resume_text, max_length=8000):
     truncated = header + "\n\n[... middle section omitted ...]\n\n" + footer
     
     print(f"⚠️  Smart truncation applied:")
-    print(f"   Original: {len(resume_text)} chars (100%)")
-    print(f"   Kept: {len(truncated)} chars ({int(len(truncated)/len(resume_text)*100)}%)")
-    print(f"   Missing: {len(resume_text) - header_size - footer_size} chars")
-    print(f"   Strategy: First {header_size} + Last {footer_size} chars")
+    print(f"   Original: {len(resume_text):,} chars")
+    print(f"   Kept: {len(truncated):,} chars ({int(len(truncated)/len(resume_text)*100)}%)")
     
     return truncated, True
 
-
-def extract_section_boundaries(resume_text):
-    """
-    Find major section boundaries in resume for intelligent chunking
-    Returns: dict with section positions
-    """
-    sections = {
-        'contact': (0, 500),
-        'summary': None,
-        'experience': None,
-        'projects': None,
-        'education': None,
-        'skills': None,
-        'certifications': None
-    }
+def create_original_prompt(resume_text):
+    resume_snippet = resume_text[:7500] if len(resume_text) > 7500 else resume_text
     
-    lines = resume_text.split('\n')
-    
-    keywords = {
-        'summary': ['summary', 'objective', 'profile', 'about'],
-        'experience': ['experience', 'employment', 'work history', 'professional experience'],
-        'projects': ['projects', 'project experience', 'erp projects'],
-        'education': ['education', 'academic', 'qualification'],
-        'skills': ['skills', 'technical skills', 'competencies', 'expertise'],
-        'certifications': ['certifications', 'certificates', 'training', 'licenses']
-    }
-    
-    char_count = 0
-    for i, line in enumerate(lines):
-        line_lower = line.lower().strip()
-        
-        for section, words in keywords.items():
-            if any(word in line_lower for word in words):
-                if sections[section] is None:
-                    sections[section] = (char_count, None)
-        
-        char_count += len(line) + 1  
-    
-    section_list = [(k, v[0]) for k, v in sections.items() if v and isinstance(v, tuple)]
-    section_list.sort(key=lambda x: x[1])
-    
-    for i in range(len(section_list) - 1):
-        section_name = section_list[i][0]
-        start = section_list[i][1]
-        end = section_list[i + 1][1]
-        sections[section_name] = (start, end)
-    
-    if section_list:
-        last_section = section_list[-1][0]
-        sections[last_section] = (section_list[-1][1], len(resume_text))
-    
-    return sections
-
-
-def create_focused_chunks(resume_text, max_chunk_size=7000):
-    """
-    Create focused chunks that prioritize complete sections
-    Returns: list of (chunk_text, chunk_description) tuples
-    """
-    if len(resume_text) <= max_chunk_size:
-        return [(resume_text, "complete resume")]
-    
-    sections = extract_section_boundaries(resume_text)
-    chunks = []
-    
-    chunk1_parts = []
-    chunk1_parts.append(resume_text[sections['contact'][0]:sections['contact'][1]])
-    
-    if sections['summary']:
-        start, end = sections['summary']
-        chunk1_parts.append(resume_text[start:end] if end else resume_text[start:start+1000])
-    
-    if sections['skills']:
-        start, end = sections['skills']
-        chunk1_parts.append(resume_text[start:end] if end else resume_text[start:start+2000])
-    
-    if sections['certifications']:
-        start, end = sections['certifications']
-        chunk1_parts.append(resume_text[start:end] if end else resume_text[start:start+1000])
-    
-    chunk1 = "\n\n".join(chunk1_parts)
-    chunks.append((chunk1[:max_chunk_size], "header, summary, skills"))
-    
-    if sections['experience']:
-        start, end = sections['experience']
-        exp_text = resume_text[start:end] if end else resume_text[start:]
-        
-        if len(exp_text) > max_chunk_size:
-            chunks.append((exp_text[-max_chunk_size:], "recent work experience"))
-            if len(exp_text) > max_chunk_size * 1.5:
-                chunks.append((exp_text[:max_chunk_size], "early work experience"))
-        else:
-            chunks.append((exp_text, "work experience"))
-    
-    if sections['projects']:
-        start, end = sections['projects']
-        proj_text = resume_text[start:end] if end else resume_text[start:]
-        chunks.append((proj_text[:max_chunk_size], "ERP projects"))
-    
-    if sections['education']:
-        start, end = sections['education']
-        edu_text = resume_text[start:end] if end else resume_text[start:start+2000]
-        chunks.append((edu_text, "education"))
-    
-    return chunks
-
-
-def deduplicate_items(items, key_fields):
-    """
-    Remove duplicate items based on key fields
-    """
-    seen = set()
-    unique_items = []
-    
-    for item in items:
-        if not isinstance(item, dict):
-            if item not in seen:
-                seen.add(item)
-                unique_items.append(item)
-            continue
-        
-        key_values = tuple(str(item.get(field, '')).lower().strip() for field in key_fields)
-        
-        if key_values not in seen and any(key_values):  
-            seen.add(key_values)
-            unique_items.append(item)
-    
-    return unique_items
-
-
-def merge_parsed_chunks(chunks_results):
-    """
-    Merge results from multiple chunks intelligently
-    """
-    if not chunks_results:
-        return {}
-    
-    if len(chunks_results) == 1:
-        return chunks_results[0]
-    
-    merged = chunks_results[0].copy()
-    
-    for result in chunks_results[1:]:
-        string_fields = ['name', 'email', 'phone', 'location', 'linkedin', 
-                        'summary', 'total_years_experience', 'current_role', 'current_company']
-        
-        for field in string_fields:
-            if not merged.get(field) and result.get(field):
-                merged[field] = result[field]
-            elif result.get(field) and len(str(result[field])) > len(str(merged.get(field, ''))):
-                merged[field] = result[field]
-        
-        simple_arrays = ['erp_systems', 'erp_modules', 'technical_skills', 'certifications']
-        for field in simple_arrays:
-            if field in result:
-                current = merged.get(field, [])
-                new_items = result[field]
-                merged[field] = list(set(current + new_items))
-        
-        if 'education' in result:
-            current_edu = merged.get('education', [])
-            new_edu = result['education']
-            merged['education'] = deduplicate_items(
-                current_edu + new_edu, 
-                ['degree', 'university']
-            )
-        
-        if 'job_experience' in result:
-            current_exp = merged.get('job_experience', [])
-            new_exp = result['job_experience']
-            merged['job_experience'] = deduplicate_items(
-                current_exp + new_exp,
-                ['company_name', 'position', 'from_date']
-            )
-        
-        if 'erp_projects_experience' in result:
-            current_proj = merged.get('erp_projects_experience', [])
-            new_proj = result['erp_projects_experience']
-            merged['erp_projects_experience'] = deduplicate_items(
-                current_proj + new_proj,
-                ['project_name', 'company_name']
-            )
-    
-    return merged
-
-
-def parse_single_chunk(chunk_text, chunk_description, model_config):
-    """Parse a single chunk with a specific model"""
-    
-    prompt = f"""Extract information from this ERP Consultant resume. Return ONLY valid JSON (no markdown, no explanations, no thinking process).
+    return f"""Extract information from this ERP Consultant resume. Return ONLY valid JSON (no markdown, no explanations, no thinking process).
 {{
   "name": "",
   "email": "",
@@ -271,122 +170,157 @@ def parse_single_chunk(chunk_text, chunk_description, model_config):
     }}
   ]
 }}
-EXTRACTION RULES:
-1. "name" - Usually at top; extract full name
-2. "email" - Look for @ symbol
-3. "phone" - Extract with country code if present
-4. "location" - Current city, state, country
-5. "linkedin" - Full LinkedIn URL if present
-6. "summary" - Professional summary/objective (2-3 sentences)
-7. "total_years_experience" - Calculate from dates or "X years" phrases
-8. "current_role" - Most recent job title
-9. "current_company" - Most recent company name
-10. "erp_systems" - ALL systems: Oracle Cloud, Oracle Fusion, SAP, Microsoft Dynamics 365, NetSuite, Infor, JD Edwards, Workday, etc.
-11. "erp_modules" - ALL modules: GL, AP, AR, FI, CO, MM, SD, PP, HR, HCM, SCM, CRM, etc.
-12. "technical_skills" - Programming, databases, tools: SQL, PL/SQL, Python, Java, BODS, ODI, OBIEE, Power BI, Excel, etc.
-13. "certifications" - All certifications with issuing org
-14. "education" - All degrees with university and year
-15. "job_experience" - ALL work history entries
-    - position: One of (Consultant, Sr.Developer, Sr Tester, Associate Consultant, Associate Specialist, Principal)
-    - employment_type: One of (Full-time, Part-time, Self-employed, Freelance, Internship, Trainee)
-    - currently_working_here: true/false
-16. "erp_projects_experience" - ALL ERP project details
-    - project_domain: Healthcare, Finance, Retail, Telecom, Energy, Transport, Education, Government, Real Estate, Hospitality, Media, Consumer Goods, Agriculture, Automobiles, IT
-    - project_type: Implementation, Roll-out, Support, Specialized Assignments
-    - project_phases_involved: Requirement Gathering, CRP, Functional Configuration, Technical Configuration, KUT, UAT, Data Migration, SIT, Post-Go Live Support, Custom Report Building, Integration Building, Custom Solution Building
-    - work_location_type: Onsite, Offshore, Work from Home
-    - product: Oracle Cloud ERP (Fusion), Oracle Fusion, SAP S/4HANA, etc.
-    - track: Business Intelligence (BI), Financials (Fin), Human Capital Management (HCM), Supply Chain Management (SCM)
-    - financials_modules: GL, AP, AR, CM, FA, Tax, FR, IC, RM, Exp, Lease Management, Subledger Accounting, Collection, Risk Management
-    - hcm_modules: Talent, Absence, ORC, Core HR, Payroll, Benefits, OTL, Compensation, Learn, Enterprise Structure, HCM Data Loader, Self Service HR
-    - scm_modules: Shipping, Inventory, Cost Management, Manufacturing, Quality, Supply Chain Financial Orchestration, Planning, Pricing, Order Management, Maintenance, Self-Service Procurement, Purchasing
-    - role: Trainee, Associate Consultant, Junior Consultant, Principal Consultant, Senior Consultant, Solution Architect, Test
-IMPORTANT:
-- Extract ALL available information from the resume
-- Use empty string "" or empty array [] if data not found
-- Do NOT include markdown (```json) or explanations
-- Return ONLY the JSON object
+
+EXTRACTION RULES (STRICT & ROBUST):
+A. GENERAL RULES
+1. If a field is not found, return "" or [] (never guess or hallucinate).
+2. All extracted values must come directly from the resume text.
+3. Maintain stable JSON structure even if resume is poorly formatted.
+4. Do NOT invent companies, roles, modules, or degrees.
+5. The output must be valid JSON only - no explanations, no markdown, no thinking process.
+
+B. NAME EXTRACTION (VERY IMPORTANT)
+1. If the resume does NOT explicitly say "Name", infer the name using:
+   - The first bold/large text at the top
+   - The first standalone line before contact info
+   - The email prefix if needed (take first part before @)
+   - Capitalized phrases that resemble human names
+2. Ignore company names, project names, department names.
+3. If multiple candidates appear, choose the primary one at the top.
+
+C. PHONE EXTRACTION
+1. Accept ALL formats: +91 9876543210, 9876543210, (987) 654-3210, 987.654.3210
+2. Extract only numeric phone, last 10-12 digits.
+3. If multiple numbers, pick the first valid mobile-like number.
+
+D. EMAIL EXTRACTION
+1. Extract any valid email with "@".
+2. If multiple exist, pick the most personal-looking one.
+
+E. LOCATION EXTRACTION
+1. Look for city/state/country keywords anywhere.
+2. Pick the FIRST location near contact section.
+
+F. LINKEDIN EXTRACTION
+1. Extract ANY linkedin.com URL.
+2. Accept both http and https.
+
+G. SUMMARY EXTRACTION
+1. Look for "Summary", "Professional Summary", "Objective", "Profile".
+2. If not found, capture the first 2-4 lines before experience starts.
+3. Must be ≤ 3 sentences.
+
+H. JOB EXPERIENCE EXTRACTION
+1. Extract each job with: title, company, dates, location, responsibilities
+2. Accept date formats: Jan 2020 – Mar 2023, 01/2020 to 03/2023, 2020-2023, 2021-Present
+3. currently_working_here = true IF: "Present", "Now", "Till date", no end date
+4.Look for keywords: "Responsibilities", "Duties", "Achievements", "Role", "Internships"
+
+I. PROJECT EXTRACTION (ERP SPECIFIC)
+1. For each project: name, region, modules, role, description
+2. If multiple projects under one job → create multiple entries.
+
+J. ERP MODULE DETECTION (AUTO-INFER)
+Detect ALL module keywords: GL, AP, AR, FA, CM, INV, PO, OM, OTL, Payroll, etc.
+
+K. ERP SYSTEM DETECTION
+Detect: Oracle Fusion/Cloud, SAP, S/4HANA, NetSuite, Dynamics 365, Workday
+
+L. EDUCATION, SKILLS, CERTIFICATIONS
+Extract all degrees, technical skills, and certifications found.
 
 Resume:
-{chunk_text}
-"""
+{resume_snippet}
+
+Return ONLY the JSON object with no additional text:"""
+
+def parse_single_chunk(chunk_text, chunk_description, model_config, timeout=150):
+    """Parse with improved error handling and longer timeout"""
+    
+    prompt = create_original_prompt(chunk_text)
     
     payload = {
         "model": model_config["model"],
         "messages": [
-            {"role": "system", "content": "You are a resume parsing assistant. Return ONLY valid JSON."},
-            {"role": "user", "content": prompt}
+            {
+                "role": "system", 
+                "content": "You are a resume parser. Return ONLY valid JSON with no additional text, no markdown, no explanations."
+            },
+            {
+                "role": "user", 
+                "content": prompt
+            }
         ],
         "stream": False,
-        "temperature": model_config["temperature"],
-        "max_tokens": model_config.get("max_tokens", 2000)
+        "temperature": 0.1,
+        "max_tokens": model_config.get("max_tokens", 4000),
+        "top_p": 0.9
     }
     
-    response = requests.post(
-        f"{SKYQ_BASE_URL}/api/chat/completions",
-        headers=SKYQ_HEADERS,
-        json=payload,
-        timeout=90
-    )
-    
-    if response.status_code != 200:
-        raise Exception(f"API error {response.status_code}: {response.text[:200]}")
-    
-    result = response.json()
-    content = result.get('choices', [{}])[0].get('message', {}).get('content') or result.get('response', '')
-    
-    if not content:
-        raise Exception("Empty response from API")
-    
-    content = content.strip()
-    if '<think>' in content and '</think>' in content:
-        content = content[content.find('</think>') + 8:].strip()
-    
-    content = content.replace('```json', '').replace('```', '').strip()
-    
-    return json.loads(content)
+    try:
+        response = requests.post(
+            f"{SKYQ_BASE_URL}/api/chat/completions",
+            headers=SKYQ_HEADERS,
+            json=payload,
+            timeout=timeout
+        )
 
+        if response.status_code == 500:
+            raise Exception(f"Ollama server error (500) - model may be overloaded or crashed")
+        elif response.status_code == 404:
+            raise Exception(f"Model not found (404) - check if {model_config['model']} is installed")
+        elif response.status_code == 429:
+            raise Exception(f"Rate limit (429) - too many requests")
+        elif response.status_code != 200:
+            raise Exception(f"API error {response.status_code}: {response.text[:200]}")
+        
+        result = response.json()
 
-def parse_resume_with_skyq(resume_text, candidate_name="Unknown", retry_count=0):
-    """
-    Parse resume using multi-strategy approach:
-    1. Try single-pass if resume is short
-    2. Use smart truncation for medium resumes  
-    3. Use multi-chunk parsing for long resumes
-    """
-    
-    print(f"\n{'='*70}")
-    print(f"📄 Parsing Resume - Attempt {retry_count + 1}/4")
-    print(f"{'='*70}")
-    print(f"Candidate: {candidate_name}")
-    print(f"Resume length: {len(resume_text):,} characters")
-    
-    max_lengths = [9000, 7000, 5500, 4500]
-    max_length = max_lengths[min(retry_count, len(max_lengths)-1)]
-    
-    print(f"Max chunk size: {max_length:,} characters")
-    print(f"{'='*70}\n")
-    
-    if len(resume_text) <= max_length:
-        print("✅ Strategy: Single-pass parsing (resume fits in one chunk)")
-        return parse_with_single_pass(resume_text, max_length, retry_count)
-    
-    elif len(resume_text) <= max_length * 1.5:
-        print("⚠️  Strategy: Smart truncation (medium length resume)")
-        print(f"   Keeping: {int(max_length/len(resume_text)*100)}% of content\n")
-        truncated_text, was_truncated = smart_truncate_resume(resume_text, max_length)
-        return parse_with_single_pass(truncated_text, max_length, retry_count)
-    
-    else:
-        print("🔄 Strategy: Multi-chunk parsing (long resume)")
-        print(f"   Resume is {len(resume_text)/max_length:.1f}x the chunk size\n")
-        return parse_with_multi_chunk(resume_text, max_length, retry_count)
-
+        content = (
+            result.get('choices', [{}])[0].get('message', {}).get('content') or 
+            result.get('response', '') or
+            result.get('content', '')
+        )
+        
+        if not content or not content.strip():
+            raise Exception("Empty response from API - model returned no content")
+        
+        parsed = safe_json_parse(content)
+        
+        if not isinstance(parsed, dict):
+            raise Exception(f"Expected dict, got {type(parsed).__name__}")
+        
+        has_basic_data = any([
+            parsed.get('name'),
+            parsed.get('email'),
+            parsed.get('phone'),
+            parsed.get('erp_systems'),
+            parsed.get('job_experience')
+        ])
+        
+        if not has_basic_data:
+            raise Exception("Parsed JSON has no useful data - all fields empty")
+        
+        return parsed
+        
+    except requests.exceptions.Timeout:
+        raise Exception(f"Request timeout after {timeout}s - model too slow")
+    except requests.exceptions.ConnectionError:
+        raise Exception(f"Connection error - is Ollama running?")
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Request failed: {str(e)[:100]}")
+    except Exception as e:
+        # Re-raise with context
+        error_type = type(e).__name__
+        error_msg = str(e)[:200]
+        raise Exception(f"{error_type}: {error_msg}")
 
 def parse_with_single_pass(resume_text, max_length, retry_count):
-    """Parse resume in a single pass with all models"""
+    """Parse resume with all available models"""
     
-    last_error = None
+    errors = []
+    best_result = None
+    best_score = 0
     
     for idx, config in enumerate(MODEL_CONFIGS):
         try:
@@ -397,79 +331,62 @@ def parse_with_single_pass(resume_text, max_length, retry_count):
             score = score_resume_completeness(result)
             print(f"   ✅ Success! Completeness: {score}/100\n")
             
-            return result
+            if score > best_score:
+                best_result = result
+                best_score = score
+            
+            if score >= 60:
+                return result
             
         except Exception as e:
-            print(f"   ❌ Failed: {str(e)[:100]}\n")
-            last_error = str(e)
-            time.sleep(1)
+            error_msg = str(e)[:200]
+            errors.append(f"{config['model']}: {error_msg}")
+            print(f"   ❌ Failed: {error_msg}\n")
+            
+            if "500" in error_msg or "crashed" in error_msg.lower():
+                print(f"   ⏳ Waiting 5s for Ollama to recover...")
+                time.sleep(5)
+            else:
+                time.sleep(2)
+    
+    if best_result and best_score > 0:
+        print(f"✅ Returning best result (score: {best_score}/100)\n")
+        return best_result
     
     if retry_count < 3:
-        print(f"⚠️  All models failed, retrying with smaller chunk...\n")
-        time.sleep(2)
+        print(f"⚠️  All {len(MODEL_CONFIGS)} models failed:")
+        for err in errors:
+            print(f"   - {err}")
+        print(f"\n⚠️  Retrying with smaller chunk size...\n")
+        time.sleep(3)
         return parse_resume_with_skyq(resume_text, "Retry", retry_count + 1)
     
-    raise Exception(f"All attempts failed. Last error: {last_error}")
+    raise Exception(f"All attempts failed after {retry_count+1} tries. Last errors: {errors[-2:]}")
 
-
-def parse_with_multi_chunk(resume_text, max_length, retry_count):
-    """Parse long resume using multiple focused chunks"""
+def parse_resume_with_skyq(resume_text, candidate_name="Unknown", retry_count=0):
+    """Main parsing function"""
     
-    chunks = create_focused_chunks(resume_text, max_length)
-    print(f"   Created {len(chunks)} focused chunks:\n")
+    print(f"\n{'='*70}")
+    print(f"📄 Parsing Resume - Attempt {retry_count + 1}/4")
+    print(f"{'='*70}")
+    print(f"Candidate: {candidate_name}")
+    print(f"Resume length: {len(resume_text):,} characters")
     
-    for i, (chunk, desc) in enumerate(chunks, 1):
-        print(f"   Chunk {i}: {desc} ({len(chunk):,} chars)")
+    max_lengths = [7000, 5000, 3500, 2500]
+    max_length = max_lengths[min(retry_count, len(max_lengths)-1)]
     
-    print()
+    print(f"Max chunk size: {max_length:,} characters")
+    print(f"{'='*70}\n")
     
-    chunk_results = []
-    last_error = None
+    if len(resume_text) > max_length:
+        print(f"⚠️  Resume too long, applying smart truncation\n")
+        resume_text, was_truncated = smart_truncate_resume(resume_text, max_length)
     
-    for idx, config in enumerate(MODEL_CONFIGS):
-        try:
-            print(f"🤖 Parsing with Model: {config['model']}\n")
-            
-            temp_results = []
-            for i, (chunk, desc) in enumerate(chunks, 1):
-                try:
-                    print(f"   📋 Chunk {i}/{len(chunks)}: {desc}...")
-                    result = parse_single_chunk(chunk, desc, config)
-                    temp_results.append(result)
-                    print(f"      ✅ Parsed successfully")
-                    
-                except Exception as e:
-                    print(f"      ⚠️  Failed: {str(e)[:80]}")
-            
-            if temp_results:
-                chunk_results = temp_results
-                break  
-            
-        except Exception as e:
-            print(f"   ❌ Model failed: {str(e)[:100]}\n")
-            last_error = str(e)
-            time.sleep(1)
-    
-    if not chunk_results:
-        if retry_count < 3:
-            print(f"\n⚠️  Retrying with smaller chunks...\n")
-            time.sleep(2)
-            return parse_resume_with_skyq(resume_text, "Retry", retry_count + 1)
-        raise Exception(f"All parsing attempts failed. Last error: {last_error}")
-    
-    print(f"\n🔄 Merging {len(chunk_results)} chunk results...")
-    merged = merge_parsed_chunks(chunk_results)
-    
-    score = score_resume_completeness(merged)
-    print(f"✅ Final completeness: {score}/100\n")
-    
-    return merged
-
+    return parse_with_single_pass(resume_text, max_length, retry_count)
 
 def enhance_parsed_data(parsed_data, resume_text):
-    """Post-process and enhance parsed resume data"""
     
-    for field in ['erp_systems', 'erp_modules', 'technical_skills', 'certifications', 'projects']:
+    for field in ['erp_systems', 'erp_modules', 'technical_skills', 'certifications']:
         if field in parsed_data:
             parsed_data[field] = clean_array(parsed_data[field])
     
@@ -506,40 +423,21 @@ def enhance_parsed_data(parsed_data, resume_text):
             normalized_erp.append(normalized)
     parsed_data['erp_systems'] = normalized_erp
     
-    module_mappings = {
-        'FICO': ['FI', 'CO', 'Financial Accounting', 'Controlling'],
-        'SCM': ['MM', 'SD', 'Supply Chain Management'],
-        'HCM': ['HR', 'Human Capital Management']
-    }
-    
-    expanded_modules = list(parsed_data.get('erp_modules', []))
-    modules_to_add = []
-    
-    for module in expanded_modules:
-        if isinstance(module, str) and module in module_mappings:
-            modules_to_add.extend(module_mappings[module])
-    
-    for new_module in modules_to_add:
-        if new_module not in expanded_modules:
-            expanded_modules.append(new_module)
-    
-    parsed_data['erp_modules'] = expanded_modules
-    
     if not parsed_data.get('total_years_experience'):
         years = extract_years_experience(resume_text)
         if years:
             parsed_data['total_years_experience'] = str(years)
     
-    for field in ['technical_skills', 'certifications']:
+    for field in ['technical_skills', 'certifications', 'erp_systems', 'erp_modules']:
         if not parsed_data.get(field):
             parsed_data[field] = []
     
     return parsed_data
 
-
 def score_resume_completeness(parsed_data):
-    """Score how complete the parsed resume is (0-100)"""
+    """Score completeness (0-100)"""
     score = 0
+    
     if parsed_data.get('name'): score += 5
     if parsed_data.get('email'): score += 5
     if parsed_data.get('phone'): score += 5
@@ -554,6 +452,7 @@ def score_resume_completeness(parsed_data):
         score += 10
     if parsed_data.get('erp_projects_experience') and len(parsed_data['erp_projects_experience']) > 0:
         score += 10
+    
     if parsed_data.get('current_role'): score += 3
     if parsed_data.get('current_company'): score += 2
     
@@ -562,3 +461,63 @@ def score_resume_completeness(parsed_data):
     if parsed_data.get('certifications'): score += 5
     
     return min(score, 100)
+
+def deduplicate_items(items, key_fields):
+    """Remove duplicates"""
+    seen = set()
+    unique = []
+    
+    for item in items:
+        if not isinstance(item, dict):
+            if item not in seen:
+                seen.add(item)
+                unique.append(item)
+            continue
+        
+        key = tuple(str(item.get(f, '')).lower().strip() for f in key_fields)
+        if key not in seen and any(key):
+            seen.add(key)
+            unique.append(item)
+    
+    return unique
+
+def merge_parsed_chunks(chunks_results):
+    """Merge multiple chunk results"""
+    if not chunks_results:
+        return {}
+    if len(chunks_results) == 1:
+        return chunks_results[0]
+    
+    merged = chunks_results[0].copy()
+    
+    for result in chunks_results[1:]:
+        for field in ['name', 'email', 'phone', 'location', 'linkedin', 'summary', 
+                      'total_years_experience', 'current_role', 'current_company']:
+            if not merged.get(field) and result.get(field):
+                merged[field] = result[field]
+            elif result.get(field) and len(str(result[field])) > len(str(merged.get(field, ''))):
+                merged[field] = result[field]
+        
+        for field in ['erp_systems', 'erp_modules', 'technical_skills', 'certifications']:
+            if field in result:
+                merged[field] = list(set(merged.get(field, []) + result[field]))
+        
+        if 'education' in result:
+            merged['education'] = deduplicate_items(
+                merged.get('education', []) + result['education'], 
+                ['degree', 'university']
+            )
+        
+        if 'job_experience' in result:
+            merged['job_experience'] = deduplicate_items(
+                merged.get('job_experience', []) + result['job_experience'],
+                ['company_name', 'position']
+            )
+        
+        if 'erp_projects_experience' in result:
+            merged['erp_projects_experience'] = deduplicate_items(
+                merged.get('erp_projects_experience', []) + result['erp_projects_experience'],
+                ['project_name']
+            )
+    
+    return merged
