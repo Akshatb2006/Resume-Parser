@@ -372,6 +372,91 @@ def _update_certifications(parsed_data, resume_url, headers):
         print(f"   ⚠️ Certifications error: {e}")
 
 
+def _get_track_id(headers, track_name):
+    try:
+        res = requests.get(f"{YECC_BASE_URL}/resumeTrack", headers=headers, timeout=10)
+        if res.status_code == 200:
+            tracks = res.json().get("data", [])
+            track_lower = track_name.lower() if track_name else ""
+            for t in tracks:
+                title = t.get("Title", "").lower()
+                if track_lower in title or (track_lower == "scm" and "supply chain" in title):
+                    return t.get("ID")
+                if track_lower == "fin" and "financ" in title:
+                    return t.get("ID")
+                if track_lower == "hcm" and "human capital" in title:
+                    return t.get("ID")
+            return tracks[0].get("ID") if tracks else "1"
+    except:
+        pass
+    return "1"
+
+def _get_product_id(headers, product_name):
+    try:
+        res = requests.get(f"{YECC_BASE_URL}/resumeProduct", headers=headers, timeout=10)
+        if res.status_code == 200:
+            products = res.json().get("data", [])
+            product_lower = product_name.lower() if product_name else ""
+            for p in products:
+                title = p.get("Title", "").lower()
+                if product_lower and product_lower in title:
+                    return p.get("ID")
+                if "oracle" in product_lower and "oracle" in title:
+                    return p.get("ID")
+            return products[0].get("ID") if products else "1"
+    except:
+        pass
+    return "1"
+
+def _get_module_objects(headers, module_names, track_id, product_id):
+    try:
+        res = requests.get(f"{YECC_BASE_URL}/resumeModules", headers=headers, timeout=10)
+        if res.status_code == 200:
+            all_modules = res.json().get("data", [])
+            matched = []
+            for mod_name in module_names:
+                mod_lower = mod_name.lower() if mod_name else ""
+                for m in all_modules:
+                    title = m.get("Title", "").lower()
+                    if mod_lower in title or title in mod_lower:
+                        matched.append({
+                            "Title": m.get("Title"),
+                            "ModuleID": m.get("ID")
+                        })
+                        break
+            return matched if matched else [{"Title": module_names[0], "ModuleID": None}] if module_names else []
+    except:
+        pass
+    return [{"Title": m, "ModuleID": None} for m in module_names] if module_names else []
+
+def _get_domain_id(headers, domain_name):
+    try:
+        res = requests.get(f"{YECC_BASE_URL}/resumeDomain", headers=headers, timeout=10)
+        if res.status_code == 200:
+            domains = res.json().get("data", [])
+            domain_lower = domain_name.lower() if domain_name else ""
+            for d in domains:
+                if domain_lower in d.get("Title", "").lower():
+                    return d.get("ID")
+            return domains[0].get("ID") if domains else None
+    except:
+        pass
+    return None
+
+def _get_role_id(headers, role_name):
+    try:
+        res = requests.get(f"{YECC_BASE_URL}/resumeRole", headers=headers, timeout=10)
+        if res.status_code == 200:
+            roles = res.json().get("data", [])
+            role_lower = role_name.lower() if role_name else ""
+            for r in roles:
+                if role_lower in r.get("Title", "").lower() or "consultant" in r.get("Title", "").lower():
+                    return r.get("ID")
+            return roles[0].get("ID") if roles else None
+    except:
+        pass
+    return None
+
 def _update_erp_projects(parsed_data, resume_url, lookups, headers):
     try:
         erp_projects = parsed_data.get("erp_projects_experience", [])
@@ -381,43 +466,116 @@ def _update_erp_projects(parsed_data, resume_url, lookups, headers):
             return
         
         projects = []
-        for proj in erp_projects[:5]:
+        for idx, proj in enumerate(erp_projects[:5]):
             project_name = proj.get("project_name", "") or "ERP Project"
             company_name = proj.get("company_name", "") or "Client"
-            project_domain = proj.get("project_domain", "") or ""
+            project_domain = proj.get("project_domain", "") or "ERP Implementation"
             role = proj.get("role", "") or "ERP Consultant"
             is_current = proj.get("currently_working_on_this_project", False)
             
+            track = proj.get("track", "") or "SCM"
+            product = proj.get("product", "") or "Oracle Cloud ERP (Fusion)"
+            
+            track_id = _get_track_id(headers, track)
+            product_id = _get_product_id(headers, product)
+            domain_id = _get_domain_id(headers, project_domain)
+            role_id = _get_role_id(headers, role)
+            
             all_modules = []
+            all_modules.extend(proj.get("scm_modules", []))
             all_modules.extend(proj.get("financials_modules", []))
             all_modules.extend(proj.get("hcm_modules", []))
-            all_modules.extend(proj.get("scm_modules", []))
-            modules_str = ", ".join(all_modules) if all_modules else ""
             
-            description = f"Domain: {project_domain}. " if project_domain else ""
-            description += f"Modules: {modules_str}" if modules_str else ""
+            module_objects = _get_module_objects(headers, all_modules, track_id, product_id)
             
-            projects.append({
+            project_types = proj.get("project_type", [])
+            if not project_types:
+                project_types = ["Implementation"]
+            
+            project_phases = proj.get("project_phases_involved", [])
+            if not project_phases:
+                project_phases = ["Requirement Gathering (or High Level Analysis - HLA)"]
+            
+            work_location = proj.get("work_location_type", [])
+            if not work_location:
+                work_location = ["Offshore"]
+            
+            reference_id = f"id_{int(import_time())}"
+            
+            project_entry = {
+                "id": f"id_{idx}_{int(import_time())}",
                 "ProjectName": project_name,
                 "CompanyName": company_name,
-                "Role": role,
-                "Domain": project_domain,
-                "Modules": modules_str,
+                "CompanyID": lookups.get("company_id", 1),
+                "Roles": [role],
+                "RolesID": role_id,
+                "Product": product,
+                "ProductID": product_id,
+                "Track": track,
+                "TrackID": track_id,
+                "Modules": module_objects,
+                "ProjectDomain": project_domain,
+                "ProjectDomainID": domain_id,
+                "ProjectType": project_types,
+                "ProjectPhases": project_phases,
+                "WorkLocationType": work_location,
+                "ProjectCountry": "India",
+                "ProjectCountryID": lookups.get("country_id", 3),
                 "FromDate": "2022-01-01T18:30:00.000Z",
-                "ToDate": None if is_current else "2023-01-01T18:30:00.000Z",
+                "ToDate": None if is_current else "2023-12-31T18:30:00.000Z",
                 "isPresent": is_current,
-                "ShortDescription": description[:500],
                 "FromDateMonth": "01",
                 "FromDateYear": "2022",
-                "ToDateMonth": "" if is_current else "01",
-                "ToDateYear": "" if is_current else "2023"
-            })
+                "ToDateMonth": "" if is_current else "12",
+                "ToDateYear": "" if is_current else "2023",
+                "KeyLearnings": "",
+                "Recognitions": "",
+                "KeyContributions": "",
+                "TrackObject": {
+                    "ID": str(track_id),
+                    "Title": track,
+                    "label": track,
+                    "value": track,
+                    "ProductID": str(product_id)
+                },
+                "ProductObject": {
+                    "ID": str(product_id),
+                    "Title": product,
+                    "label": product,
+                    "value": product,
+                    "Status": "t"
+                },
+                "ModulesObject": [
+                    {
+                        "ID": str(m.get("ModuleID", "")),
+                        "Title": m.get("Title", ""),
+                        "label": m.get("Title", ""),
+                        "value": m.get("Title", ""),
+                        "TrackID": str(track_id),
+                        "ProductID": str(product_id)
+                    } for m in module_objects
+                ]
+            }
+            
+            projects.append(project_entry)
         
         print(f"   → Updating ERP projects ({len(projects)} entries)...")
+        print(f"   Payload sample: {json.dumps(projects[0], indent=2)[:800]}")
         
-        res = requests.put(f"{YECC_BASE_URL}/ResumeBuilder/ERPProjects/{resume_url}",
+        res = requests.put(f"{YECC_BASE_URL}/ResumeBuilder/ProjectExperiences/{resume_url}",
                            headers=headers, json=projects, timeout=30)
-        print(f"   Response: {res.status_code} {res.text[:200]}")
+        print(f"   ProjectExperiences Response: {res.status_code} {res.text[:300]}")
+        
+        if res.status_code == 200:
+            print("   ✅ Projects updated successfully!")
+        else:
+            print(f"   ⚠️ Projects update failed: {res.text[:200]}")
         
     except Exception as e:
+        import traceback
         print(f"   ⚠️ ERP Projects error: {e}")
+        traceback.print_exc()
+
+def import_time():
+    import time
+    return time.time() * 1000
